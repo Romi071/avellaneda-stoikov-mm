@@ -11,6 +11,7 @@ class MarketSimulator():
         self.poisson_intensity = 2
         self.dt = 0.25
         self.N_max = 50
+        self.active_maker_orders = deque([])
 
     async def maker_loop(self, session):
         while True:
@@ -36,6 +37,19 @@ class MarketSimulator():
             async with session.post("/order", json=ask_order) as resp:
                 resp.raise_for_status()
                 ask_logs = await resp.json()
+            
+            #Add the orders to the tracker deque
+            if bid_logs['resting_amount'] > 0:
+                self.active_maker_orders.append({'orderId': bid_logs['orderId'], 'secret_token': bid_logs['secret_token']})
+            if ask_logs['resting_amount'] > 0:
+                self.active_maker_orders.append({'orderId': ask_logs['orderId'], 'secret_token': ask_logs['secret_token']})
+
+            #Garbage cleaner
+            while len(self.active_maker_orders) > self.N_max:
+                cancel_order = self.active_maker_orders.popleft()
+                async with session.post("/cancel", json=cancel_order) as resp:
+                    resp.raise_for_status()
+                    cancel_success = await resp.json()
 
 #Initialize the market simulator object
 market_sim = MarketSimulator()
