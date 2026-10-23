@@ -9,6 +9,7 @@ class MarketSimulator():
         self.fair_price = 100
         self.sigma = 0.5
         self.poisson_intensity = 2
+        self.pareto_alpha = 1.5
         self.dt = 0.25
         self.N_max = 50
         self.active_maker_orders = deque([])
@@ -51,13 +52,34 @@ class MarketSimulator():
                     resp.raise_for_status()
                     cancel_success = await resp.json()
 
+    async def taker_loop(self, session):
+        while True:
+            #Taker Loop random exponential frequency
+            taker_dt = random.expovariate(self.poisson_intensity)
+            await asyncio.sleep(taker_dt)
+
+            #Taker order params
+            taker_side = random.choice(['buy', 'sell'])
+            if taker_side == 'buy':
+                taker_price = round(5 * self.fair_price, 2)
+            else:
+                taker_price = round(1/5 * self.fair_price, 2)
+            #Taker amount is calculated using a capped Pareto distribution with parameter pareto_alpha to simulate realistic market conditions
+            taker_amount = max(0.1, min(25, 0.1 * random.paretovariate(self.pareto_alpha)))
+            
+            #Post the taker IOC order
+            taker_order = {'side': taker_side, 'price': taker_price, 'amount': taker_amount, 'order_type': 'IOC'}
+            async with session.post("/order", json=taker_order) as resp:
+                resp.raise_for_status()
+                await resp.json()
+
 #Initialize the market simulator object
 market_sim = MarketSimulator()
 
 #Main Event Loop
 async def main():
     async with aiohttp.ClientSession(base_url='http://localhost:8000') as session:
-            #Noise Maker loop
-            await market_sim.maker_loop(session)
+            #Concurrent Maker and Taker Event loop
+            await asyncio.gather(market_sim.maker_loop(session), market_sim.taker_loop(session))
 
 asyncio.run(main())
