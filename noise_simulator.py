@@ -29,8 +29,8 @@ class MarketSimulator():
             bid_price = round(self.fair_price - delta_bid, 2)
             ask_price = round(self.fair_price + delta_ask, 2)
 
-            bid_order = {'side': 'buy', 'price': bid_price, 'amount': random.uniform(0.1, 5)}
-            ask_order = {'side': 'sell', 'price': ask_price, 'amount': random.uniform(0.1, 5)}
+            bid_order = {'side': 'buy', 'price': bid_price, 'amount': random.uniform(0.1, 5), 'client_tag': 'sim_maker'}
+            ask_order = {'side': 'sell', 'price': ask_price, 'amount': random.uniform(0.1, 5), 'client_tag': 'sim_maker'}
 
             async with session.post("/order", json=bid_order) as resp:
                 resp.raise_for_status()
@@ -49,8 +49,11 @@ class MarketSimulator():
             while len(self.active_maker_orders) > self.N_max:
                 cancel_order = self.active_maker_orders.popleft()
                 async with session.post("/cancel", json=cancel_order) as resp:
-                    resp.raise_for_status()
-                    cancel_success = await resp.json()
+                    try:
+                        resp.raise_for_status()
+                        cancel_success = await resp.json()
+                    except aiohttp.ClientResponseError:
+                        pass
 
     async def taker_loop(self, session):
         while True:
@@ -68,7 +71,7 @@ class MarketSimulator():
             taker_amount = max(0.1, min(25, 0.1 * random.paretovariate(self.pareto_alpha)))
             
             #Post the taker IOC order
-            taker_order = {'side': taker_side, 'price': taker_price, 'amount': taker_amount, 'order_type': 'IOC'}
+            taker_order = {'side': taker_side, 'price': taker_price, 'amount': taker_amount, 'order_type': 'IOC', 'client_tag': 'sim_taker'}
             async with session.post("/order", json=taker_order) as resp:
                 resp.raise_for_status()
                 await resp.json()
