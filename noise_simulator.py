@@ -40,9 +40,9 @@ class MarketSimulator():
                 ask_logs = await resp.json()
             
             #Add the orders to the tracker deque
-            if bid_logs['resting_amount'] > 0:
+            if bid_logs['amount'] > 0:
                 self.active_maker_orders.append({'orderId': bid_logs['orderId'], 'secret_token': bid_logs['secret_token']})
-            if ask_logs['resting_amount'] > 0:
+            if ask_logs['amount'] > 0:
                 self.active_maker_orders.append({'orderId': ask_logs['orderId'], 'secret_token': ask_logs['secret_token']})
 
             #Garbage cleaner
