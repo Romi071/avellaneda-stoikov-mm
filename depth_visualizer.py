@@ -1,4 +1,4 @@
-from PyQt6 import QtWidgets, QtCore
+from PyQt6 import QtWidgets, QtCore, QtGui
 import pyqtgraph as pg
 import numpy as np
 import qasync
@@ -11,11 +11,29 @@ app = QtWidgets.QApplication(sys.argv)
 
 class Visualizer():
     def __init__(self):
-        #Declare the snapshot variable as None and initialize pyqtgraph's window and persistent curve
+        #Declare the snapshot variable as None and initialize pyqtgraph's window
         self.latest_snapshot = None
-        self.win = pg.PlotWidget(title="Real-Time Market Depth Chart")
+        self.win = pg.PlotWidget()
+        #Title
+        self.win.setTitle("Real-Time Market Depth Chart", size="18pt")
+        #Axis Labels
+        label_style = {'font-size': '14pt', 'font-weight': 'bold'}
+        self.win.setLabel('bottom', 'Price', units='$', **label_style)
+        self.win.setLabel('left', 'Cumulative Depth', units='Shares', **label_style)
+        #Axis Tick Numbers
+        tick_font = QtGui.QFont()
+        tick_font.setPointSize(11)
+        self.win.getAxis('bottom').setTickFont(tick_font)
+        self.win.getAxis('left').setTickFont(tick_font)
+        #Aesthetics
+        self.win.showGrid(x=True, y=True, alpha=0.3)
+        pg.setConfigOptions(antialias=True)
+        #Initialize persistent filled RG curves with wide borders
         self.bids_curve = self.win.plot(pen='g', fillLevel=0, brush=(0, 255, 0, 50))
+        self.bids_curve = self.win.plot(pen=pg.mkPen('g', width=2), fillLevel=0, brush=(0, 255, 0, 50))
         self.asks_curve = self.win.plot(pen='r', fillLevel=0, brush=(255, 0, 0, 50))
+        self.asks_curve = self.win.plot(pen=pg.mkPen('r', width=2), fillLevel=0, brush=(255, 0, 0, 50))
+        #Show the window
         self.win.show()
 
         #50ms timer on the pyqtgraph coroutine that updates the graph in real time
