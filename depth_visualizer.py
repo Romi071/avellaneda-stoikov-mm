@@ -29,9 +29,7 @@ class Visualizer():
         self.win.showGrid(x=True, y=True, alpha=0.3)
         pg.setConfigOptions(antialias=True)
         #Initialize persistent filled RG curves with wide borders
-        self.bids_curve = self.win.plot(pen='g', fillLevel=0, brush=(0, 255, 0, 50))
         self.bids_curve = self.win.plot(pen=pg.mkPen('g', width=2), fillLevel=0, brush=(0, 255, 0, 50))
-        self.asks_curve = self.win.plot(pen='r', fillLevel=0, brush=(255, 0, 0, 50))
         self.asks_curve = self.win.plot(pen=pg.mkPen('r', width=2), fillLevel=0, brush=(255, 0, 0, 50))
         #Show the window
         self.win.show()

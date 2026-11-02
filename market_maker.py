@@ -13,6 +13,7 @@ class Avellaneda_Stoikov():
         self.kappa = 1      #OB liquidity density
         self.tau = 1        #Constant instead of the original time horizon tau = T - t
         self.active_orders = {}
+        self.event = asyncio.Event()
 
 
     async def quoting_loop(self, session):
@@ -20,20 +21,20 @@ class Avellaneda_Stoikov():
             #Sleep for 0.5 seconds between cycles
             await asyncio.sleep(0.5)
 
-            #If the mid price doesn't exist at the moment, sleep until it does
-            while not self.mid_price:
-                await asyncio.sleep(0.25)
-
             #Cancel the two resting orders
             #Bid order:
             if 'bid' in self.active_orders:
                 bid_cancel = self.active_orders['bid']
+                self.event.clear()
                 async with session.post("http://localhost:8000/cancel", json=bid_cancel) as resp:
                     if resp.status in [200, 404]:
                         cancel_logs = await resp.json()
                         cancelled_amount = cancel_logs['cancelled_amount']
                     else:
                         resp.raise_for_status()
+                    #Await for the socket listener to update the mid price
+                    if resp.status == 200:
+                        await self.event.wait()
                 #Add to inventory what was bought (order amount - cancelled amount)
                 self.inventory += bid_cancel['amount'] - cancelled_amount
                 #Delete from active orders
@@ -42,17 +43,27 @@ class Avellaneda_Stoikov():
             #Ask order:
             if 'ask' in self.active_orders:
                 ask_cancel = self.active_orders['ask']
+                self.event.clear()
                 async with session.post("http://localhost:8000/cancel", json=ask_cancel) as resp:
                     if resp.status in [200, 404]:
                         cancel_logs = await resp.json()
                         cancelled_amount = cancel_logs['cancelled_amount']
                     else:
                         resp.raise_for_status()
+                    #Await for the socket listener to update the mid price
+                    if resp.status == 200:
+                        await self.event.wait()
                 #Subtract from inventory what was sold (order amount - cancelled amount)
                 self.inventory -= ask_cancel['amount'] - cancelled_amount
                 #Delete from active orders
                 del self.active_orders['ask']
-                
+
+
+            #If the mid price doesn't exist at the moment, sleep until it does
+            while not self.mid_price:
+                self.event.clear()
+                await self.event.wait()
+            
             #Fix the amounts
             bid_amount = 1
             ask_amount = 1
@@ -109,6 +120,7 @@ class Avellaneda_Stoikov():
                         self.mid_price = (market_depth['bids'][0][0] + market_depth['asks'][0][0]) / 2
                     else:
                         self.mid_price = None
+                    self.event.set()    
                 
 
 #Initialize the Avellaneda Stoikov market maker object
