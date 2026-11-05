@@ -146,7 +146,14 @@ class Avellaneda_Stoikov():
                     else:
                         self.mid_price = None
                     self.event.set()    
-                
+
+    async def cancel_all(self, session):
+        for _, order in self.active_orders.items():
+            async with session.post("http://localhost:8000/cancel", json=order) as resp:
+                if resp.status in [200, 404]:
+                    await resp.json()
+                else:
+                    pass
 
 #Initialize the Avellaneda Stoikov market maker object
 market_maker = Avellaneda_Stoikov()
@@ -155,8 +162,10 @@ market_maker = Avellaneda_Stoikov()
 async def main():
     #Create an aiohttp session and gather both coroutines
     async with aiohttp.ClientSession() as session:
-        await asyncio.gather(market_maker.socket_listener(session), market_maker.quoting_loop(session))
-
+        try:    
+            await asyncio.gather(market_maker.socket_listener(session), market_maker.quoting_loop(session))
+        finally:
+            await market_maker.cancel_all(session)
 
 #Run the main event loop
 asyncio.run(main())
