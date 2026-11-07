@@ -30,36 +30,21 @@ Designed as a standalone quantitative client architecture connecting over WebSoc
 ## System Topology & Data Flow
 
 ```mermaid
-flowchart LR
-    subgraph Sim ["noise_simulator.py (Exogenous Flow)"]
-        ABM["ABM Maker Loop<br/>GTC Quotes + FIFO GC"]
-        PAR["Poisson-Pareto Taker<br/>Heavy-Tailed IOC Sweeps"]
-    end
+%%{init: {'theme': 'dark', 'themeVariables': {'fontSize': '18px', 'fontFamily': 'Consolas, monospace'}, 'flowchart': {'nodeSpacing': 45, 'rankSpacing': 50, 'padding': 15}}}%%
+flowchart TD
+    SIM["<b>noise_simulator.py</b><br/>ABM Maker + Pareto IOC Taker"]
+    LOB["<b>server.py & order_book.py</b><br/>FastAPI + Price-Time Matching Engine"]
+    MM["<b>market_maker.py</b><br/>Avellaneda-Stoikov Quoting Engine"]
+    GUI["<b>depth_visualizer.py</b><br/>20 FPS PyQtGraph L2 Depth & HUD"]
+    DB[("<b>ledger.db</b><br/>SQLite WAL")]
+    ANA["<b>analytics.py</b><br/>Vectorized pandas Attribution"]
 
-    subgraph Exchange ["Custom LOB Engine (Port 8000)"]
-        LOB["order_book.py & server.py<br/>Price-Time Matching Engine"]
-        DB[("ledger.db<br/>SQLite WAL")]
-    end
-
-    subgraph HotPath ["market_maker.py (Hot Path)"]
-        MM["Avellaneda-Stoikov Bot<br/>Reservation Price & Spread"]
-    end
-
-    subgraph Visualizer ["depth_visualizer.py (20 FPS GUI)"]
-        GUI["PyQt6 / pyqtgraph<br/>L2 Depth & Live HUD"]
-    end
-
-    subgraph ColdPath ["analytics.py (Cold Path)"]
-        ANA["Post-Trade Attribution<br/>pandas & matplotlib"]
-    end
-
-    ABM -->|"POST /order & /cancel"| LOB
-    PAR -->|"POST /order (IOC)"| LOB
+    SIM -->|"POST /order & /cancel"| LOB
     LOB ==>|"WS /stream (L2 Depth)"| MM
+    MM -->|"POST /order & /cancel ('as_mm')"| LOB
     LOB ==>|"WS /stream (L2 Depth)"| GUI
-    MM -->|"POST /order & /cancel"| LOB
     MM -.->|"UDP 127.0.0.1:9999 (Telemetry)"| GUI
-    LOB -->|"Async Batch Flush"| DB
+    LOB -->|"Async Batch Flush (0.1s)"| DB
     DB -->|"SQL Query ('as_mm')"| ANA
 ```
 ---
