@@ -1,32 +1,97 @@
-# avellaneda-stoikov-market-maker
+<div align="center">
 
-An institutional-style, asynchronous Market Making suite implementing the **Avellaneda-Stoikov (2008)** stochastic optimal control framework (*"High-frequency trading in a limit order book"*).
+# Avellaneda-Stoikov Market Making Suite
 
-Designed as a standalone quantitative client ecosystem connecting over WebSockets and REST to a custom [Limit Order Book](https://github.com/Romi071/limit-order-book) matching engine, complete with an exogenous stochastic order-flow generator and a hardware-accelerated L2 market depth visualizer.
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Asyncio](https://img.shields.io/badge/Asyncio-aiohttp-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://docs.aiohttp.org/)
+[![GUI](https://img.shields.io/badge/GUI-PyQt6%20%7C%20pyqtgraph-41CD52?style=for-the-badge&logo=qt&logoColor=white)](https://www.pyqtgraph.org/)
+[![Math](https://img.shields.io/badge/Model-Avellaneda--Stoikov%20(2008)-FFD700?style=for-the-badge)](https://math.nyu.edu/~avellane/HighFrequencyTrading.pdf)
+
+An institutional-style, asynchronous Market Making ecosystem implementing the **Avellaneda-Stoikov (2008)** stochastic optimal control framework (*"High-frequency trading in a limit order book"*).
+
+Designed as a standalone quantitative client architecture connecting over WebSockets and REST to a custom [Limit Order Book](https://github.com/Romi071/limit-order-book) matching engine, complete with an exogenous stochastic order-flow simulator and a hardware-accelerated 20 FPS L2 depth & telemetry visualizer.
 
 ---
 
-## System Architecture
+<!-- 
+  TODO: Record a 5-8 second GIF of depth_visualizer.py running with the bot & simulator active, 
+  save it as assets/live_hud_demo.gif (or drag-and-drop it into GitHub's web editor), and uncomment below:
+-->
+<!-- 
+<p align="center">
+  <img src="assets/live_hud_demo.gif" alt="Real-Time L2 Depth & Avellaneda-Stoikov HUD" width="850">
+  <br>
+  <em>Real-time L2 cumulative order book depth, dynamic gold Reservation Price line, and 20 FPS Mark-to-Market PnL telemetry streamed over non-blocking localhost UDP.</em>
+</p>
+-->
 
-* **`market_maker.py` (The Hot Path — Completed):** Event-driven `asyncio` & `aiohttp` execution engine. Consumes live L2 WebSocket depth snapshots (`ws://localhost:8000/stream`), tracks real-time inventory ($q_t$), cash balance ($X_t$), and Mark-to-Market wealth ($W_t = X_t + q_t S_t$), and continuously quotes two-sided liquidity (`client_tag: 'as_mm'`) on a `0.5s` cadence around the stationary infinite-horizon ($\tau = \text{const}$) reservation price and optimal spread:
-  $$r(s, q, \tau) = s - q \gamma \sigma^2 \tau$$
-  $$\Delta(\tau) = \gamma \sigma^2 \tau + \frac{2}{\gamma} \ln\left(1 + \frac{\gamma}{\kappa}\right)$$
-  * **Lockstep `asyncio.Event` Coroutine Handshake:** Eliminates self-referential BBO skewing. Prior to firing `POST /cancel` requests, `quoting_loop` clears an `asyncio.Event` barrier and awaits `self.event.wait()` on `HTTP 200` responses, yielding execution until `socket_listener` ingests the server's post-cancel L2 broadcast so `mid_price` reflects strictly external liquidity.
-  * **Liquidity Vacuum Circuit Breaker:** Positioned strictly *after* resting orders are cancelled and cleared from the book, the bot evaluates `while not self.mid_price:` via zero-lag event-driven wakeups. If one side of the order book is wiped out during a flash crash, the bot parks itself with zero resting orders (flat execution risk) and resumes quoting the exact microsecond a two-sided market is restored.
-  * **Exact Maker/Taker Fill Accounting:** Evaluates semantic `HTTP 200` and `HTTP 404` cancellation responses to compute resting maker fills (`order_amount - cancelled_amount`) at quoted limit prices, while iterating over execution receipts (`fills`) on `POST /order` to capture price-improved taker fills across multiple price levels, guarded by symmetric inventory caps ($\pm q_{\max}$).
-  * **Fire-and-Forget UDP Telemetry Pipe:** Broadcasts real-time state payloads (`balance`, `inventory`, `res_price`, `wealth`) over a connectionless localhost UDP datagram socket (`127.0.0.1:9999`) with zero blocking I/O overhead on the critical quoting path.
-  * **Cancel-on-Disconnect Kill Switch:** Wraps the main `asyncio.gather` loop in a `try...finally` teardown block that invokes `cancel_all` upon process termination (`CancelledError` / `KeyboardInterrupt`), sweeping all remaining resting quotes from the exchange before closing the HTTP session.
+</div>
 
-* **`noise_simulator.py` (Exogenous Market Flow — Completed):** Concurrent `asyncio` & `aiohttp` stochastic flow generator running two decoupled coroutines over a shared connection pool:
-  * **Latent Price & Passive Depth (`maker_loop`):** Evolves the unobservable fair price via discrete-time Arithmetic Brownian Motion ($S_{t+\Delta t} = S_t + \sigma \sqrt{\Delta t} Z$) and streams two-sided `GTC` limit orders (`client_tag: 'sim_maker'`) at uniform offsets $\delta \sim \mathcal{U}(0.02, 0.20)$ and volumes $\mathcal{U}(0.1, 5.0)$ quantized to a strict $0.01$ tick grid. Includes an $O(1)$ `collections.deque` FIFO garbage collector that actively sweeps stale resting quotes (`POST /cancel`) beyond $N_{\max}$ to prevent heap bloat and ghost-liquidity walls.
-  * **Aggressive Order Flow (`taker_loop`):** Models impatient market takers arriving via a Poisson process ($\Delta \tau \sim \text{Exp}(\lambda)$). Fires spread-crossing `IOC` orders (`client_tag: 'sim_taker'`) sized via a bounded power-law distribution ($\max(0.1, \min(25, 0.1 \cdot \text{Pareto}(\alpha = 1.5)))$ in the heavy-tailed Lévy regime) to simulate both retail noise and multi-level institutional liquidity sweeps.
+## System Topology & Data Flow
 
-* **`depth_visualizer.py` (Real-Time L2 Telemetry GUI — Completed):** Hardware-accelerated desktop market depth and telemetry visualizer built with `PyQt6`, `pyqtgraph`, and `qasync`:
-  * **Unified `qasync` Event Loop:** Bridges Qt's C++ event loop with Python's `asyncio` loop on a single thread, streaming live L2 WebSocket updates without blocking GUI responsiveness.
-  * **Decoupled 20 FPS Rendering Pipeline (`50ms` `QTimer`):** Isolates high-frequency network ingestion (`self.latest_snapshot`) from OpenGL/Qt rendering, integrating cumulative bid and ask depth curves in real time via vectorized `numpy.cumsum` operations.
-  * **Non-Blocking UDP Telemetry & Live HUD:** Drains the localhost `SOCK_DGRAM` UDP buffer (`127.0.0.1:9999`) every `50ms` frame via non-blocking reads (`BlockingIOError`), re-valuing Mark-to-Market wealth at 20 FPS against live L2 best bid/ask mid-prices between bot quoting cycles. Renders a color-coded monospace HTML scoreboard (`PnL`, `Cash`, `Inv`, `Res Px`) in the plot title alongside a dynamic gold dashed `pg.InfiniteLine` tracking the bot's reservation price across the depth chart.
+```mermaid
+flowchart LR
+    subgraph Sim ["noise_simulator.py (Exogenous Flow)"]
+        ABM["ABM Maker Loop<br/>GTC Quotes + FIFO GC"]
+        PAR["Poisson-Pareto Taker<br/>Heavy-Tailed IOC Sweeps"]
+    end
 
-* **`analytics.py` (The Cold Path — Planned):** Post-trade `pandas` & `matplotlib` attribution pipeline querying the exchange's SQLite WAL ledger (`ledger.db`). Isolates executions by `takerTag` / `makerTag` (`'as_mm'`), resamples ticks into OHLCV bars, and decomposes Spread Capture vs. Inventory PnL against a symmetric baseline.
+    subgraph Exchange ["Custom LOB Engine (Port 8000)"]
+        LOB["order_book.py & server.py<br/>Price-Time Matching Engine"]
+        DB[("ledger.db<br/>SQLite WAL")]
+    end
+
+    subgraph HotPath ["market_maker.py (Hot Path)"]
+        MM["Avellaneda-Stoikov Bot<br/>Reservation Price & Spread"]
+    end
+
+    subgraph Visualizer ["depth_visualizer.py (20 FPS GUI)"]
+        GUI["PyQt6 / pyqtgraph<br/>L2 Depth & Live HUD"]
+    end
+
+    subgraph ColdPath ["analytics.py (Cold Path)"]
+        ANA["Post-Trade Attribution<br/>pandas & matplotlib"]
+    end
+
+    ABM -->|"POST /order & /cancel"| LOB
+    PAR -->|"POST /order (IOC)"| LOB
+    LOB ==>|"WS /stream (L2 Depth)"| MM
+    LOB ==>|"WS /stream (L2 Depth)"| GUI
+    MM -->|"POST /order & /cancel"| LOB
+    MM -.->|"UDP 127.0.0.1:9999 (Telemetry)"| GUI
+    LOB -->|"Async Batch Flush"| DB
+    DB -->|"SQL Query ('as_mm')"| ANA
+```
+---
+
+## Core Components
+
+### 1. `market_maker.py` — The Execution Hot Path (Completed)
+Event-driven `asyncio` & `aiohttp` execution engine. Consumes live L2 WebSocket depth snapshots (`ws://localhost:8000/stream`), tracks real-time inventory ($q_t$), cash balance ($X_t$), and Mark-to-Market wealth ($W_t = X_t + q_t S_t$), and continuously quotes two-sided liquidity (`client_tag: 'as_mm'`) on a `0.5s` cadence around the stationary infinite-horizon ($\tau = \text{const}$) reservation price and optimal spread:
+
+$$r(s, q, \tau) = s - q \gamma \sigma^2 \tau$$
+
+$$\Delta(\tau) = \gamma \sigma^2 \tau + \frac{2}{\gamma} \ln\left(1 + \frac{\gamma}{\kappa}\right)$$
+
+* **Lockstep `asyncio.Event` Coroutine Handshake:** Eliminates self-referential BBO skewing. Prior to firing `POST /cancel` requests, `quoting_loop` clears an `asyncio.Event` barrier and awaits `self.event.wait()` on `HTTP 200` responses, yielding execution until `socket_listener` ingests the server's post-cancel L2 broadcast so `mid_price` reflects strictly external liquidity.
+* **Liquidity Vacuum Circuit Breaker:** Positioned strictly *after* resting orders are cancelled and cleared from the book, the bot evaluates `while not self.mid_price:` via zero-lag event-driven wakeups. If one side of the order book is wiped out during a flash crash, the bot parks itself with zero resting orders (flat execution risk) and resumes quoting the exact microsecond a two-sided market is restored.
+* **Exact Maker/Taker Fill Accounting:** Evaluates semantic `HTTP 200` and `HTTP 404` cancellation responses to compute resting maker fills (`order_amount - cancelled_amount`) at quoted limit prices, while iterating over execution receipts (`fills`) on `POST /order` to capture price-improved taker fills across multiple price levels, guarded by symmetric inventory caps ($\pm q_{\max}$).
+* **Fire-and-Forget UDP Telemetry Pipe:** Broadcasts real-time state payloads (`balance`, `inventory`, `res_price`, `wealth`) over a connectionless localhost UDP datagram socket (`127.0.0.1:9999`) with zero blocking I/O overhead on the critical quoting path.
+* **Cancel-on-Disconnect Kill Switch:** Wraps the main `asyncio.gather` loop in a `try...finally` teardown block that invokes `cancel_all` upon process termination (`CancelledError` / `KeyboardInterrupt`), sweeping all remaining resting quotes from the exchange before closing the HTTP session.
+
+### 2. `noise_simulator.py` — Exogenous Stochastic Order Flow (Completed)
+Concurrent `asyncio` & `aiohttp` market simulator running two decoupled coroutines over a shared connection pool:
+* **Latent Price & Passive Depth (`maker_loop`):** Evolves the unobservable fair price via discrete-time Arithmetic Brownian Motion ($S_{t+\Delta t} = S_t + \sigma \sqrt{\Delta t} Z$) and streams two-sided `GTC` limit orders (`client_tag: 'sim_maker'`) at uniform offsets $\delta \sim \mathcal{U}(0.02, 0.20)$ and volumes $\mathcal{U}(0.1, 5.0)$ quantized to a strict $0.01$ tick grid. Includes an $O(1)$ `collections.deque` FIFO garbage collector that actively sweeps stale resting quotes (`POST /cancel`) beyond $N_{\max}$ to prevent heap bloat and ghost-liquidity walls.
+* **Aggressive Order Flow (`taker_loop`):** Models impatient market takers arriving via a Poisson process ($\Delta \tau \sim \text{Exp}(\lambda)$). Fires spread-crossing `IOC` orders (`client_tag: 'sim_taker'`) sized via a bounded power-law distribution ($\max(0.1, \min(25, 0.1 \cdot \text{Pareto}(\alpha = 1.5)))$ in the heavy-tailed Lévy regime) to simulate both retail noise and multi-level institutional liquidity sweeps.
+
+### 3. `depth_visualizer.py` — Real-Time 20 FPS L2 & Telemetry GUI (Completed)
+Hardware-accelerated desktop market depth and telemetry visualizer built with `PyQt6`, `pyqtgraph`, and `qasync`:
+* **Unified `qasync` Event Loop:** Bridges Qt's C++ event loop with Python's `asyncio` loop on a single thread, streaming live L2 WebSocket updates without blocking GUI responsiveness.
+* **Decoupled 20 FPS Rendering Pipeline (`50ms` `QTimer`):** Isolates high-frequency network ingestion (`self.latest_snapshot`) from OpenGL/Qt rendering, integrating cumulative bid and ask depth curves in real time via vectorized `numpy.cumsum` operations.
+* **Non-Blocking UDP Telemetry & Live HUD:** Drains the localhost `SOCK_DGRAM` UDP buffer (`127.0.0.1:9999`) every `50ms` frame via non-blocking reads (`BlockingIOError`), re-valuing Mark-to-Market wealth at 20 FPS against live L2 best bid/ask mid-prices between bot quoting cycles. Renders a color-coded monospace HTML scoreboard (`PnL`, `Cash`, `Inv`, `Res Px`) in the plot title alongside a dynamic gold dashed `pg.InfiniteLine` tracking the bot's reservation price across the depth chart.
+
+### 4. `analytics.py` — Cold-Path Attribution Pipeline (Planned)
+Post-trade `pandas` & `matplotlib` attribution pipeline querying the exchange's SQLite WAL ledger (`ledger.db`). Isolates executions by `takerTag` / `makerTag` (`'as_mm'`), reconstructs inventory and equity trajectories, and decomposes Spread Capture vs. Inventory PnL.
 
 ---
 
