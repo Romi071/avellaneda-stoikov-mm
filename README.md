@@ -30,7 +30,7 @@ Designed as a standalone quantitative client architecture connecting over WebSoc
 ## System Topology & Data Flow
 
 ```mermaid
-%%{init: {'theme': 'dark', 'themeVariables': {'fontSize': '18px', 'fontFamily': 'Consolas, monospace'}, 'flowchart': {'nodeSpacing': 45, 'rankSpacing': 50, 'padding': 15}}}%%
+%%{init: {'theme': 'dark', 'themeVariables': {'fontSize': '14px', 'fontFamily': 'Consolas, monospace'}, 'flowchart': {'nodeSpacing': 45, 'rankSpacing': 50, 'padding': 15}}}%%
 flowchart TD
     SIM["<b>noise_simulator.py</b><br/>ABM Maker + Pareto IOC Taker"]
     LOB["<b>server.py & order_book.py</b><br/>FastAPI + Price-Time Matching Engine"]
