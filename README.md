@@ -75,8 +75,56 @@ Hardware-accelerated desktop market depth and telemetry visualizer built with `P
 * **Decoupled 20 FPS Rendering Pipeline (`50ms` `QTimer`):** Isolates high-frequency network ingestion (`self.latest_snapshot`) from OpenGL/Qt rendering, integrating cumulative bid and ask depth curves in real time via vectorized `numpy.cumsum` operations.
 * **Non-Blocking UDP Telemetry & Live HUD:** Drains the localhost `SOCK_DGRAM` UDP buffer (`127.0.0.1:9999`) every `50ms` frame via non-blocking reads (`BlockingIOError`), re-valuing Mark-to-Market wealth at 20 FPS against live L2 best bid/ask mid-prices between bot quoting cycles. Renders a color-coded monospace HTML scoreboard (`PnL`, `Cash`, `Inv`, `Res Px`) in the plot title alongside a dynamic gold dashed `pg.InfiniteLine` tracking the bot's reservation price across the depth chart.
 
-### 4. `analytics.py` — Cold-Path Attribution Pipeline (Planned)
-Post-trade `pandas` & `matplotlib` attribution pipeline querying the exchange's SQLite WAL ledger (`ledger.db`). Isolates executions by `takerTag` / `makerTag` (`'as_mm'`), reconstructs inventory and equity trajectories, and decomposes Spread Capture vs. Inventory PnL.
+### 4. `analytics.py` — Cold-Path Attribution Pipeline (Completed)
+Post-trade attribution over the exchange's SQLite WAL ledger (`ledger.db`), standard library only. Isolates executions by `takerTag` / `makerTag` (`'as_mm'`), reconstructs the inventory and equity trajectories, and decomposes equity into **spread capture** and **inventory PnL**:
+
+$$E = \underbrace{\sum_i \text{sign}_i (\text{ref}_i - p_i) a_i}_{\text{spread capture}} + \underbrace{\sum_i q_i (\text{ref}_{i+1} - \text{ref}_i)}_{\text{inventory PnL}}, \quad \text{ref}_{n+1} = M$$
+
+where `ref_i` is the last trade printed before fill *i* and `M` is the terminal mark (the last print, or `--mark`). The two components are summed by Abel summation, so they always reconcile to marked equity — the CLI asserts the residual is zero instead of trusting it.
+
+```bash
+# summary for the bot's own fills (reads the ledger read-only)
+python analytics.py --db ../limit-order-book/ledger.db
+
+# machine-readable, plus the per-fill equity curve
+python analytics.py --db ledger.db --json --curve equity.csv
+
+# optional plot (needs matplotlib)
+python analytics.py --db ledger.db --plot equity.png
+```
+
+Sample output (a three-fill ledger):
+
+```
+tag            as_mm
+fills          3 (2 maker / 1 taker, 1 buy / 2 sell)
+volume         4.0000
+inventory      +0.0000 (path -2.0000 .. +0.0000)
+cash           +1.18
+mark           99.9800
+equity         +1.18
+
+spread capture +1.90 (maker +1.38, taker +0.52)
+inventory PnL  -0.72
+total          +1.18
+residual       -0.0000000000
+```
+
+A wrong `--db` path fails with exit code 2 instead of silently creating an empty database, and a ledger without a `trades` table names the tables it did find.
+
+### 5. `as_mm/` — Shared, Importable Core
+The quoting maths, the exchange contract and the telemetry wire format live in a small package so they can be tested and reused without starting any loop:
+
+| Module | What lives there |
+| :--- | :--- |
+| `as_mm.model` | reservation price, optimal spread, tick snapping, validated `ModelParams`, inventory headroom |
+| `as_mm.execution` | `POST /order` and `POST /cancel` interpretation, fill accounting |
+| `as_mm.client` | resilient REST client: retries on 5xx/429 and transport errors, typed results |
+| `as_mm.telemetry` | cumulative depth curves, HUD state, UDP datagram codec |
+| `as_mm.analytics` | ledger loading and the PnL decomposition |
+
+Every entry point is importable (`import market_maker` no longer starts trading) and every number is validated at the boundary: `gamma <= 0`, `kappa <= 0`, non-finite values, a negative `sigma`/`tau`/`tick`, a `--limit < 1` or a non-positive mark all fail with the offending parameter named.
+
 
 ---
 
@@ -110,6 +158,31 @@ Post-trade `pandas` & `matplotlib` attribution pipeline querying the exchange's 
 
 ---
 
+## Installation & Tests
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"          # add ",gui" for the visualizer, ",plot" for matplotlib
+
+python -m pytest -q              # 194 passed, 1 skipped (Qt absent on a headless box)
+ruff check . && ruff format --check .
+```
+
+Every module is importable without side effects, every test runs against a fake matching engine (no exchange, no display, no network), and the suite exercises the quoting maths, the REST contract, the fill accounting, the telemetry codec and the attribution identity.
+
+```
+tests/test_model.py            quoting maths, parameter validation, tick grid
+tests/test_execution.py        cancel/order interpretation, fill accounting
+tests/test_client.py           retries and the downgrade to "unknown"
+tests/test_market_maker.py     quoting cycles, inventory bounds, crashes, telemetry
+tests/test_noise_simulator.py  ABM/Pareto maths and a failing exchange
+tests/test_telemetry.py        depth curves, HUD state, UDP codec
+tests/test_analytics.py        attribution, reconciliation identity, CLI
+tests/test_entrypoints.py      no loop starts on import, CLIs exit cleanly
+```
+
+---
+
 ## Running the Suite
 
 Ensure the [Limit Order Book](https://github.com/Romi071/limit-order-book) exchange server (`uvicorn server:app --no-access-log`) is running on `http://localhost:8000`, then launch the ecosystem components in separate terminals:
@@ -135,4 +208,12 @@ python market_maker.py
 - [x] Real-time Mark-to-Market wealth ($W_t$) accounting and non-blocking UDP telemetry broadcast (`market_maker.py`)
 - [x] Hardware-accelerated 20 FPS L2 cumulative depth visualizer (`depth_visualizer.py`)
 - [x] Live HUD telemetry receiver (`127.0.0.1:9999`) overlay and dynamic reservation price line (`depth_visualizer.py`)
-- [ ] Cold-path SQLite attribution and equity-curve analytics (`analytics.py`)
+- [x] Cold-path SQLite attribution and equity-curve analytics (`analytics.py`)
+- [x] Test suite against a fake matching engine (`tests/`)
+- [x] Packaging (`pyproject.toml`), validated parameters and CLI flags for every entry point
+
+### Operator notes
+
+* `--once` quotes a single cycle from `GET /depth`, prints the resulting quote and sweeps it again — a one-shot check that the engine is reachable and the configuration is sane. Add `--dry-run` to compute the quote without sending anything.
+* A transient engine failure no longer ends the run: `/order` and `/cancel` are retried (5xx/429/transport), an unconfirmed cancel leaves the order tracked for the next cycle, and the depth WebSocket reconnects with exponential backoff (0.5 s → 8 s).
+* Quotes are sized to the remaining inventory headroom, so the documented hard bound (`±q_max`) is never breached by a full lot.

@@ -1,0 +1,16 @@
+# Core runtime (quoting engine, simulator, analytics)
+numpy>=1.24
+aiohttp>=3.8
+
+# Real-time depth visualizer (optional, Linux/macOS/Windows desktop)
+PyQt6>=6.5
+pyqtgraph>=0.13
+qasync>=0.27
+
+# Optional extras
+matplotlib>=3.7   # analytics.py --plot
+
+# Development
+pytest>=7.4
+pytest-asyncio>=0.23
+ruff>=0.5
