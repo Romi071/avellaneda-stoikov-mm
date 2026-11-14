@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "as-mm"
+version = "1.1.0"
+description = "Avellaneda-Stoikov market making suite: quoting engine, order-flow simulator, depth visualizer and ledger attribution"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Romi071" }]
+keywords = ["market-making", "avellaneda-stoikov", "limit-order-book", "quantitative-finance", "asyncio"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = ["numpy>=1.24", "aiohttp>=3.8"]
+
+[project.optional-dependencies]
+gui = ["PyQt6>=6.5", "pyqtgraph>=0.13", "qasync>=0.27"]
+plot = ["matplotlib>=3.7"]
+dev = ["pytest>=7.4", "pytest-asyncio>=0.23", "ruff>=0.5"]
+
+[project.scripts]
+as-bot = "market_maker:cli"
+as-sim = "noise_simulator:cli"
+as-analytics = "analytics:cli"
+
+[project.urls]
+Homepage = "https://github.com/Romi071/avellaneda-stoikov-mm"
+
+[tool.setuptools]
+py-modules = ["market_maker", "noise_simulator", "analytics", "depth_visualizer"]
+
+[tool.setuptools.packages.find]
+include = ["as_mm*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["error::RuntimeWarning"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RET"]
+ignore = ["E501"]
