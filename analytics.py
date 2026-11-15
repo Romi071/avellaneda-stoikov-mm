@@ -11,5 +11,8 @@ query = "SELECT * FROM trades WHERE takerTag = 'as_mm' OR makerTag = 'as_mm'"
 df = pd.read_sql_query(query, connection)
 connection.close()
 
-#Check that the connection is working properly:
-print(df.head())
+#Isolate the AS mm buys
+buys_mask = ((df['takerTag'] == 'as_mm') & (df['takerSide'] == 'buy')) | ((df['makerTag'] == 'as_mm') & (df['takerSide'] == 'sell'))
+
+#Add a column with the direction of the AS mm operations (+1 for buy, -1 for sell)
+df['direction'] = np.where(buys_mask, 1, -1)
