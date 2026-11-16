@@ -16,3 +16,11 @@ buys_mask = ((df['takerTag'] == 'as_mm') & (df['takerSide'] == 'buy')) | ((df['m
 
 #Add a column with the direction of the AS mm operations (+1 for buy, -1 for sell)
 df['direction'] = np.where(buys_mask, 1, -1)
+
+#Reconstruct inventory, balance and wealth
+df['inventory'] = (df['direction'] * df['amount']).cumsum()
+df['balance'] = (-df['direction'] * df['amount'] * df['price']).cumsum()
+df['wealth'] = df['balance'] + df['inventory'] * df['price']
+
+#Test
+print(df[['takerSide', 'makerTag', 'price', 'amount', 'direction', 'inventory', 'balance', 'wealth']].tail(10))
