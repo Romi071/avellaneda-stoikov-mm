@@ -22,5 +22,17 @@ df['inventory'] = (df['direction'] * df['amount']).cumsum()
 df['balance'] = (-df['direction'] * df['amount'] * df['price']).cumsum()
 df['wealth'] = df['balance'] + df['inventory'] * df['price']
 
+#Maximum Drawdown Computation
+high_water_mark = df['wealth'].cummax().clip(lower=0)
+drawdown = high_water_mark - df['wealth']
+max_drawdown = drawdown.max()
+
+#Maker vs Taker fill ratio, obtained by computing the mean on the Boolean mask (True == 1 ; False == 0)
+maker_percentage = (df['makerTag'] == 'as_mm').mean() * 100
+
+#Edge per share
+n_fills = len(df)
+edge_per_share = df['wealth'].iloc[-1] / df['amount'].sum() 
+
 #Test
-print(df[['takerSide', 'makerTag', 'price', 'amount', 'direction', 'inventory', 'balance', 'wealth']].tail(10))
+print(f"Fills: {n_fills} | Maker Ratio: {maker_percentage:.2f}% | Max DD: ${max_drawdown:.2f} | Edge/Share: ${edge_per_share:.4f}")
