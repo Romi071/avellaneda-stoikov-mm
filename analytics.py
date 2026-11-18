@@ -34,5 +34,6 @@ maker_percentage = (df['makerTag'] == 'as_mm').mean() * 100
 n_fills = len(df)
 edge_per_share = df['wealth'].iloc[-1] / df['amount'].sum() 
 
-#Test
-print(f"Fills: {n_fills} | Maker Ratio: {maker_percentage:.2f}% | Max DD: ${max_drawdown:.2f} | Edge/Share: ${edge_per_share:.4f}")
+#Calculate Scaled Sharpe Ratio (N * mean / (sqrt(N) * std) = sqrt(N) * mean / std)
+pnl_deltas = df['wealth'].diff()
+sharpe = np.sqrt(n_fills) * pnl_deltas.mean() / pnl_deltas.std()
