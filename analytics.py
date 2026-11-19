@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 import sqlite3
 
 #Open a connection to the ledger data base and write the query to only get the Avellaneda-Stoikov market maker trades
@@ -37,3 +38,23 @@ edge_per_share = df['wealth'].iloc[-1] / df['amount'].sum()
 #Calculate Scaled Sharpe Ratio (N * mean / (sqrt(N) * std) = sqrt(N) * mean / std)
 pnl_deltas = df['wealth'].diff()
 sharpe = np.sqrt(n_fills) * pnl_deltas.mean() / pnl_deltas.std()
+
+#Plots
+fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
+
+ax1.plot(df['wealth'], label='M2M Wealth')
+ax1.plot(high_water_mark, linestyle='--', label='High-Water Mark')
+ax1.set_ylabel('Wealth ($)')
+ax1.legend()
+
+ax2.plot(-drawdown, color='red')
+ax2.fill_between(df.index, -drawdown, 0, color='red', alpha=0.2)
+ax2.set_ylabel('Drawdown ($)')
+
+ax3.plot(df['inventory'], color='purple')
+ax3.axhline(0, color='black', linestyle='--')
+ax3.set_ylabel('Inventory (q_t)')
+ax3.set_xlabel('Trade Number')
+
+plt.tight_layout()
+plt.show()
