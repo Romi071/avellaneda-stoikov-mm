@@ -5,11 +5,12 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Asyncio](https://img.shields.io/badge/Asyncio-aiohttp-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://docs.aiohttp.org/)
 [![GUI](https://img.shields.io/badge/GUI-PyQt6%20%7C%20pyqtgraph-41CD52?style=for-the-badge&logo=qt&logoColor=white)](https://www.pyqtgraph.org/)
+[![Analytics](https://img.shields.io/badge/Analytics-pandas%20%7C%20Matplotlib-150458?style=for-the-badge&logo=pandas&logoColor=white)](https://pandas.pydata.org/)
 [![Math](https://img.shields.io/badge/Model-Avellaneda--Stoikov%20(2008)-FFD700?style=for-the-badge)](https://math.nyu.edu/~avellane/HighFrequencyTrading.pdf)
 
 An institutional-style, asynchronous Market Making ecosystem implementing the **Avellaneda-Stoikov (2008)** stochastic optimal control framework (*"High-frequency trading in a limit order book"*).
 
-Designed as a standalone quantitative client architecture connecting over WebSockets and REST to a custom [Limit Order Book](https://github.com/Romi071/limit-order-book) matching engine, complete with an exogenous stochastic order-flow simulator and a hardware-accelerated 20 FPS L2 depth & telemetry visualizer.
+Designed as a standalone quantitative client architecture connecting over WebSockets and REST to a custom [Limit Order Book](https://github.com/Romi071/limit-order-book) matching engine, complete with an exogenous stochastic order-flow simulator, a hardware-accelerated 20 FPS L2 depth & telemetry visualizer, and a vectorized SQLite post-trade attribution & tearsheet pipeline.
 
 ---
 
@@ -30,14 +31,14 @@ Designed as a standalone quantitative client architecture connecting over WebSoc
 ## System Topology & Data Flow
 
 ```mermaid
-%%{init: {'theme': 'dark', 'themeVariables': {'fontSize': '13px', 'fontFamily': 'Consolas, monospace'}, 'flowchart': {'nodeSpacing': 45, 'rankSpacing': 50, 'padding': 15}}}%%
+%%{init: {'theme': 'dark', 'themeVariables': {'fontSize': '14px', 'fontFamily': 'Consolas, monospace'}, 'flowchart': {'nodeSpacing': 45, 'rankSpacing': 50, 'padding': 15}}}%%
 flowchart TD
     SIM["<b>noise_simulator.py</b><br/>ABM Maker + Pareto IOC Taker"]
     LOB["<b>server.py & order_book.py</b><br/>FastAPI + Price-Time Matching Engine"]
     MM["<b>market_maker.py</b><br/>Avellaneda-Stoikov Quoting Engine"]
     GUI["<b>depth_visualizer.py</b><br/>20 FPS PyQtGraph L2 Depth & HUD"]
     DB[("<b>ledger.db</b><br/>SQLite WAL")]
-    ANA["<b>analytics.py</b><br/>Vectorized pandas Attribution"]
+    ANA["<b>analytics.py</b><br/>Vectorized pandas & Matplotlib Tearsheet"]
 
     SIM -->|"POST /order & /cancel"| LOB
     LOB ==>|"WS /stream (L2 Depth)"| MM
@@ -47,6 +48,7 @@ flowchart TD
     LOB -->|"Async Batch Flush (0.1s)"| DB
     DB -->|"SQL Query ('as_mm')"| ANA
 ```
+
 ---
 
 ## Core Components
@@ -54,9 +56,13 @@ flowchart TD
 ### 1. `market_maker.py` — The Execution Hot Path (Completed)
 Event-driven `asyncio` & `aiohttp` execution engine. Consumes live L2 WebSocket depth snapshots (`ws://localhost:8000/stream`), tracks real-time inventory ($q_t$), cash balance ($X_t$), and Mark-to-Market wealth ($W_t = X_t + q_t S_t$), and continuously quotes two-sided liquidity (`client_tag: 'as_mm'`) on a `0.5s` cadence around the stationary infinite-horizon ($\tau = \text{const}$) reservation price and optimal spread:
 
-$$r(s, q, \tau) = s - q \gamma \sigma^2 \tau$$
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.image?%5Cdpi%7B120%7D%5Ccolor%7Bwhite%7Dr(s%2C%20q%2C%20%5Ctau)%20%3D%20s%20-%20q%20%5Cgamma%20%5Csigma%5E2%20%5Ctau" alt="Avellaneda-Stoikov Reservation Price" />
+</p>
 
-$$\Delta(\tau) = \gamma \sigma^2 \tau + \frac{2}{\gamma} \ln\left(1 + \frac{\gamma}{\kappa}\right)$$
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.image?%5Cdpi%7B120%7D%5Ccolor%7Bwhite%7D%5CDelta(%5Ctau)%20%3D%20%5Cgamma%20%5Csigma%5E2%20%5Ctau%20%2B%20%5Cfrac%7B2%7D%7B%5Cgamma%7D%20%5Cln%5Cleft(1%20%2B%20%5Cfrac%7B%5Cgamma%7D%7B%5Ckappa%7D%5Cright)" alt="Avellaneda-Stoikov Optimal Spread" />
+</p>
 
 * **Lockstep `asyncio.Event` Coroutine Handshake:** Eliminates self-referential BBO skewing. Prior to firing `POST /cancel` requests, `quoting_loop` clears an `asyncio.Event` barrier and awaits `self.event.wait()` on `HTTP 200` responses, yielding execution until `socket_listener` ingests the server's post-cancel L2 broadcast so `mid_price` reflects strictly external liquidity.
 * **Liquidity Vacuum Circuit Breaker:** Positioned strictly *after* resting orders are cancelled and cleared from the book, the bot evaluates `while not self.mid_price:` via zero-lag event-driven wakeups. If one side of the order book is wiped out during a flash crash, the bot parks itself with zero resting orders (flat execution risk) and resumes quoting the exact microsecond a two-sided market is restored.
@@ -75,8 +81,23 @@ Hardware-accelerated desktop market depth and telemetry visualizer built with `P
 * **Decoupled 20 FPS Rendering Pipeline (`50ms` `QTimer`):** Isolates high-frequency network ingestion (`self.latest_snapshot`) from OpenGL/Qt rendering, integrating cumulative bid and ask depth curves in real time via vectorized `numpy.cumsum` operations.
 * **Non-Blocking UDP Telemetry & Live HUD:** Drains the localhost `SOCK_DGRAM` UDP buffer (`127.0.0.1:9999`) every `50ms` frame via non-blocking reads (`BlockingIOError`), re-valuing Mark-to-Market wealth at 20 FPS against live L2 best bid/ask mid-prices between bot quoting cycles. Renders a color-coded monospace HTML scoreboard (`PnL`, `Cash`, `Inv`, `Res Px`) in the plot title alongside a dynamic gold dashed `pg.InfiniteLine` tracking the bot's reservation price across the depth chart.
 
-### 4. `analytics.py` — Cold-Path Attribution Pipeline (Planned)
-Post-trade `pandas` & `matplotlib` attribution pipeline querying the exchange's SQLite WAL ledger (`ledger.db`). Isolates executions by `takerTag` / `makerTag` (`'as_mm'`), reconstructs inventory and equity trajectories, and decomposes Spread Capture vs. Inventory PnL.
+### 4. `analytics.py` — Cold-Path Attribution & Tearsheet Pipeline (Completed)
+Post-trade `sqlite3`, `pandas`, `numpy`, and `matplotlib` quantitative analytics suite operating offline against the exchange's SQLite WAL trade ledger (`ledger.db`):
+* **Filtered SQLite Ingestion:** Queries disk-level trade logs via `pd.read_sql_query` filtering strictly on `takerTag = 'as_mm' OR makerTag = 'as_mm'` to isolate bot executions from background noise-simulator flow before loading into RAM.
+* **Vectorized State Reconstruction:** Resolves taker-centric exchange receipts into bot-centric trade direction (`+1` buy / `-1` sell) via vectorized `numpy.where` boolean masks, reconstructing exact running inventory ($q_t$), cash balance ($X_t$), and Mark-to-Market wealth ($W_t = X_t + q_t S_t$) trajectories using C-speed `.cumsum()` operations.
+* **Risk & Microstructure Attribution:** Computes running High-Water Mark (`.cummax().clip(lower=0)`), Maximum Drawdown, Passive Maker vs. Aggressive Taker fill ratio, realized PnL Edge per Share traded, and session-scaled Sharpe ratio from per-trade wealth deltas (`.diff()`).
+* **Synchronized 3-Panel Matplotlib Tearsheet:** Renders an object-oriented `plt.subplots(3, 1, sharex=True)` diagnostic dashboard aligning (1) M2M Wealth vs. High-Water Mark, (2) shaded Underwater Drawdown, and (3) Inventory Mean-Reversion ($q_t$) around zero—enabling direct visual attribution of adverse-selection drawdowns to inventory spikes and aggressive unwinding.
+
+<!-- 
+  TODO: Save your Matplotlib tearsheet PNG to assets/analytics_tearsheet.png and uncomment below:
+-->
+<!--
+<p align="center">
+  <img src="assets/analytics_tearsheet.png" alt="Synchronized 3-Panel Market Making Tearsheet" width="850">
+  <br>
+  <em>Cold-path performance tearsheet correlating M2M equity, underwater drawdown, and Avellaneda-Stoikov inventory mean-reversion across executions.</em>
+</p>
+-->
 
 ---
 
@@ -123,6 +144,9 @@ python depth_visualizer.py
 
 # 3. Deploy the Avellaneda-Stoikov market maker
 python market_maker.py
+
+# 4. Run post-trade cold-path analytics & generate the 3-panel tearsheet
+python analytics.py
 ```
 
 ---
@@ -135,4 +159,6 @@ python market_maker.py
 - [x] Real-time Mark-to-Market wealth ($W_t$) accounting and non-blocking UDP telemetry broadcast (`market_maker.py`)
 - [x] Hardware-accelerated 20 FPS L2 cumulative depth visualizer (`depth_visualizer.py`)
 - [x] Live HUD telemetry receiver (`127.0.0.1:9999`) overlay and dynamic reservation price line (`depth_visualizer.py`)
-- [ ] Cold-path SQLite attribution and equity-curve analytics (`analytics.py`)
+- [x] Cold-path SQLite attribution, risk metrics, and synchronized 3-panel Matplotlib tearsheet (`analytics.py`)
+- [ ] Multi-horizon forward markout analysis (`.shift(-k)`) and modular pipeline refactor (`analytics.py`)
+- [ ] Parameter calibration ($\gamma$, $\kappa$) and post-only spread-crossing guards (`market_maker.py`)
