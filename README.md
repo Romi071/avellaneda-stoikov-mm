@@ -160,5 +160,4 @@ python analytics.py
 - [x] Hardware-accelerated 20 FPS L2 cumulative depth visualizer (`depth_visualizer.py`)
 - [x] Live HUD telemetry receiver (`127.0.0.1:9999`) overlay and dynamic reservation price line (`depth_visualizer.py`)
 - [x] Cold-path SQLite attribution, risk metrics, and synchronized 3-panel Matplotlib tearsheet (`analytics.py`)
-- [ ] Multi-horizon forward markout analysis (`.shift(-k)`) and modular pipeline refactor (`analytics.py`)
 - [ ] Parameter calibration ($\gamma$, $\kappa$) and post-only spread-crossing guards (`market_maker.py`)
