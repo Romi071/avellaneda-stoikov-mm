@@ -39,6 +39,28 @@ edge_per_share = df['wealth'].iloc[-1] / df['amount'].sum()
 pnl_deltas = df['wealth'].diff()
 sharpe = np.sqrt(n_fills) * pnl_deltas.mean() / pnl_deltas.std()
 
+# Multi-horizon Volume-Weighted Markout Analysis (Passive Maker Fills)
+horizons = [1, 5, 10, 20]
+maker_mask = (df['makerTag'] == 'as_mm')
+vw_markouts = {}
+
+for k in horizons:
+    future_drift = df['direction'] * (df['price'].shift(-k) - df['price'])
+    valid = maker_mask & future_drift.notna()
+    vw_markouts[k] = round(
+        float((future_drift[valid] * df['amount'][valid]).sum() / df['amount'][valid].sum()),
+        4,
+    )
+
+# Terminal-Marked PnL Attribution (Maker vs. Taker)
+terminal_pnl = df['direction'] * df['amount'] * (df['price'].iloc[-1] - df['price'])
+maker_pnl = terminal_pnl[maker_mask].sum()
+taker_pnl = terminal_pnl[~maker_mask].sum()
+
+#Test
+print("Volume-Weighted Maker Markouts ($/share):", vw_markouts)
+print(f"Terminal-Marked PnL | Maker: ${maker_pnl:.2f} | Taker: ${taker_pnl:.2f}")
+
 #Plots
 fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
 
@@ -57,4 +79,4 @@ ax3.set_ylabel('Inventory (q_t)')
 ax3.set_xlabel('Trade Number')
 
 plt.tight_layout()
-plt.show()
+# plt.show()
