@@ -8,7 +8,7 @@
 [![Analytics](https://img.shields.io/badge/Analytics-pandas%20%7C%20Matplotlib-150458?style=for-the-badge&logo=pandas&logoColor=white)](https://pandas.pydata.org/)
 [![Math](https://img.shields.io/badge/Model-Avellaneda--Stoikov%20(2008)-FFD700?style=for-the-badge)](https://math.nyu.edu/~avellane/HighFrequencyTrading.pdf)
 
-An institutional-style, asynchronous Market Making ecosystem implementing the **Avellaneda-Stoikov (2008)** stochastic optimal control framework (*"High-frequency trading in a limit order book"*).
+An institutional-style, asynchronous market-making ecosystem implementing the **Avellaneda-Stoikov (2008)** stochastic optimal control framework (*"High-frequency trading in a limit order book"*).
 
 Designed as a standalone quantitative client architecture connecting over WebSockets and REST to a custom [Limit Order Book](https://github.com/Romi071/limit-order-book) matching engine, complete with an exogenous stochastic order-flow simulator, a hardware-accelerated 20 FPS L2 depth & telemetry visualizer, and a vectorized SQLite post-trade attribution & tearsheet pipeline.
 
